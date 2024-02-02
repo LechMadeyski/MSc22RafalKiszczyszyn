@@ -1,5 +1,6 @@
 import os
 
+os.add_dll_directory(os.environ["SCITOOLS_HOME"])
 os.environ["OUTDATED_IGNORE"] = "1"
 
 from src.python.services.data_collection_service import DataCollectionService
