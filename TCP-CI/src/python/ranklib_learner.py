@@ -265,7 +265,7 @@ class RankLibLearner:
             results["apfdc"].append(apfdc)
 
             if not (build_ds_path / "feature_stats.csv").exists():
-                feature_stats_command = f"java -cp {self.ranklib_path}:{self.math3_path} ciir.umass.edu.features.FeatureManager -feature_stats {build_ds_path / 'model.txt'}"
+                feature_stats_command = f"java -cp {self.ranklib_path};{self.math3_path} ciir.umass.edu.features.FeatureManager -feature_stats {build_ds_path / 'model.txt'}"
                 feature_stats_out = subprocess.run(
                     feature_stats_command, shell=True, capture_output=True
                 )
