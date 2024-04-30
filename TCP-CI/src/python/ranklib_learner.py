@@ -5,6 +5,8 @@ import subprocess
 from .feature_extractor.feature import Feature
 from pathlib import Path
 from tqdm import tqdm
+from .services.evaluation_service import EvaluationService
+from .services.feature_selection_service import FeatureSelectionService
 import sys
 import re
 import os
@@ -29,6 +31,7 @@ class RankLibLearner:
     def __init__(self, config):
         self.config = config
         self.feature_id_map_path = config.output_path / "feature_id_map.csv"
+        
         if self.feature_id_map_path.exists():
             feature_id_map_df = pd.read_csv(self.feature_id_map_path)
             keys = feature_id_map_df["key"].values.tolist()
@@ -38,14 +41,18 @@ class RankLibLearner:
         else:
             self.feature_id_map = {}
             self.next_fid = 1
+        self.dropped_feature_ids = set()
+
         builds_df = pd.read_csv(
             config.output_path / "builds.csv", parse_dates=["started_at"]
         )
+        
         self.build_time_d = dict(
             zip(
                 builds_df["id"].values.tolist(), builds_df["started_at"].values.tolist()
             )
         )
+        
         self.ranklib_path = Path("assets") / "RankLib.jar"
         self.math3_path = Path("assets") / "commons-math3.jar"
 
@@ -60,6 +67,9 @@ class RankLibLearner:
         values = list(self.feature_id_map.values())
         feature_id_map_df = pd.DataFrame({"key": keys, "value": values})
         feature_id_map_df.to_csv(self.feature_id_map_path, index=False)
+
+    def update_dropped_features(self, feature_names):
+        self.dropped_feature_ids = set([self.get_feature_id(name) for name in feature_names])
 
     def normalize_dataset(self, dataset, scaler):
         non_feature_cols = [
@@ -130,7 +140,7 @@ class RankLibLearner:
         return pd.DataFrame(ranklib_ds_rows, columns=headers)
 
     def create_ranklib_training_sets(
-        self, ranklib_ds, output_path, custom_test_builds=None
+        self, ranklib_ds, output_path, custom_test_builds=None, force=False
     ):
         builds = ranklib_ds["i_build"].unique().tolist()
         builds.sort(key=lambda b: self.build_time_d[b])
@@ -138,6 +148,7 @@ class RankLibLearner:
             test_builds = set(builds[-self.config.test_count :])
         else:
             test_builds = [b for b in custom_test_builds if b in builds]
+        
         logging.info("Creating training sets")
         for i, build in tqdm(list(enumerate(builds)), desc="Creating training sets"):
             if build not in test_builds:
@@ -147,10 +158,20 @@ class RankLibLearner:
                 continue
             test_ds = ranklib_ds[ranklib_ds["i_build"] == build]
             build_out_path = output_path / str(build)
+            
+            if force and build_out_path.exists() and build_out_path.is_dir():
+                for item in build_out_path.iterdir():
+                    if item.is_dir():
+                        item.rmdir()
+                    else:
+                        item.unlink()
+                build_out_path.rmdir()
             build_out_path.mkdir(parents=True, exist_ok=True)
+            
             if (
-                not (output_path / str(build) / "train.txt").exists()
-                and not (output_path / str(build) / "model.txt").exists()
+                force or (
+                    not (output_path / str(build) / "train.txt").exists()
+                    and not (output_path / str(build) / "model.txt").exists())
             ):
                 train_ds.to_csv(
                     output_path / str(build) / "train.txt",
@@ -158,7 +179,7 @@ class RankLibLearner:
                     header=False,
                     index=False,
                 )
-            if not (output_path / str(build) / "test.txt").exists():
+            if force or (not (output_path / str(build) / "test.txt").exists()):
                 test_ds.to_csv(
                     output_path / str(build) / "test.txt",
                     sep=" ",
@@ -166,33 +187,8 @@ class RankLibLearner:
                     index=False,
                 )
 
-    def compute_apfd(self, pred):
-        if len(set(pred["score"].values.tolist())) == 1 and len(pred) > 1:
-            return 0.5
-        n = len(pred)
-        if n <= 1:
-            return 1.0
-        m = len(pred[pred["verdict"] > 0])
-        fault_pos_sum = np.sum(pred[pred["verdict"] > 0].index + 1)
-        apfd = 1 - fault_pos_sum / (n * m) + 1 / (2 * n)
-        return float("{:.3f}".format(apfd))
-
-    def compute_apfdc(self, pred):
-        if len(set(pred["score"].values.tolist())) == 1 and len(pred) > 1:
-            return 0.5
-        n = len(pred)
-        if n <= 1:
-            return 1.0
-        m = len(pred[pred["verdict"] > 0])
-        costs = pred["duration"].values.tolist()
-        failed_costs = 0.0
-        for tfi in pred[pred["verdict"] > 0].index:
-            failed_costs += sum(costs[tfi:]) - (costs[tfi] / 2)
-        apfdc = failed_costs / (sum(costs) * m)
-        return float("{:.3f}".format(apfdc))
-
     def extract_and_save_feature_stats(self, feature_stats_output, output_path):
-        feature_freq_map = {i: 0 for i in self.feature_id_map.values()}
+        feature_freq_map = {i: 0 for i in self.feature_id_map.values() if i not in self.dropped_feature_ids}
         matches = re.finditer(
             r"Feature\[(\d+)\]\s+:\s+(\d+)", feature_stats_output, re.MULTILINE
         )
@@ -238,6 +234,7 @@ class RankLibLearner:
                 sys.exit()
             if suffix != "":
                 os.remove(str(model_path))
+        
         pred_df = (
             pd.read_csv(
                 pred_path,
@@ -247,22 +244,38 @@ class RankLibLearner:
             # Shuffle predictions when predicted scores are equal to randomize the order.
             .sample(frac=1).reset_index(drop=True)
         )
-        pred_df.sort_values("score", ascending=False, inplace=True, ignore_index=True)
-        apfd = self.compute_apfd(pred_df)
-        apfdc = self.compute_apfdc(pred_df)
-        return apfd, apfdc
 
-    def train_and_test_all(self, output_path, ranker, dataset_df):
-        results = {"build": [], "apfd": [], "apfdc": []}
-        ds_paths = list(p for p in output_path.glob("*") if p.is_dir())
+        pred_df["rank"] = pred_df["score"].rank(method="min", ascending=False)
+
+        return EvaluationService.evaluate(pred_df[EvaluationService.COLUMNS])
+        
+
+    def train_and_test_all(self, output_path, ranker, dataset_df, custom_ds_paths=None):
+        results = {
+            "build": [], 
+            "apfd_min": [], "apfd_max": [], "apfd": [], "r_apfd": [],
+            "apfdc_min": [], "apfdc_max": [], "apfdc": [], "r_apfdc": []
+        }
+        
+        ds_paths = list(p for p in output_path.glob("*") if p.is_dir()) if custom_ds_paths is None else custom_ds_paths 
         logging.info("Starting training phase")
+        
         for build_ds_path in tqdm(ds_paths, desc="Training"):
             apfd, apfdc = self.train_and_test(
                 build_ds_path, ranker[0], ranker[1], dataset_df
             )
+
             results["build"].append(int(build_ds_path.name))
-            results["apfd"].append(apfd)
-            results["apfdc"].append(apfdc)
+            
+            results["apfd_min"].append(apfd.min)
+            results["apfd_max"].append(apfd.max)
+            results["apfd"].append(apfd.value)
+            results["r_apfd"].append(apfd.value_norm)
+
+            results["apfdc_min"].append(apfdc.min)
+            results["apfdc_max"].append(apfdc.max)
+            results["apfdc"].append(apfdc.value)
+            results["r_apfdc"].append(apfdc.value_norm)
 
             if not (build_ds_path / "feature_stats.csv").exists():
                 feature_stats_command = f"java -cp {self.ranklib_path};{self.math3_path} ciir.umass.edu.features.FeatureManager -feature_stats {build_ds_path / 'model.txt'}"
@@ -275,12 +288,14 @@ class RankLibLearner:
                 self.extract_and_save_feature_stats(
                     feature_stats_out.stdout.decode("utf-8"), build_ds_path
                 )
+        
         results_df = pd.DataFrame(results)
         results_df["build_time"] = results_df["build"].apply(
             lambda b: self.build_time_d[b]
         )
         results_df.sort_values("build_time", ignore_index=True, inplace=True)
         results_df.drop("build_time", axis=1, inplace=True)
+        
         return results_df
 
     def evaluate_heuristic(self, hname, suite_ds):
@@ -289,30 +304,31 @@ class RankLibLearner:
             {
                 "verdict": asc_suite[Feature.VERDICT].values,
                 "duration": asc_suite[Feature.DURATION].values,
-                "score": asc_suite[hname].values,
+                "rank": asc_suite[hname].values,
             }
         )
-        apfd_asc = self.compute_apfd(asc_pred)
-        apfdc_asc = self.compute_apfdc(asc_pred)
+
+        apfd_asc, apfdc_asc = EvaluationService.evaluate(asc_pred)
 
         dsc_suite = suite_ds.sort_values(hname, ascending=False, ignore_index=True)
         dsc_pred = pd.DataFrame(
             {
                 "verdict": dsc_suite[Feature.VERDICT].values,
                 "duration": dsc_suite[Feature.DURATION].values,
-                "score": dsc_suite[hname].values,
+                "rank": dsc_suite[hname].values,
             }
         )
-        apfd_dsc = self.compute_apfd(dsc_pred)
-        apfdc_dsc = self.compute_apfdc(dsc_pred)
 
-        return apfd_asc, apfd_dsc, apfdc_asc, apfdc_dsc
+        apfd_dsc, apfdc_dsc = EvaluationService.evaluate(dsc_pred)
+
+        return apfd_asc.value_norm, apfd_dsc.value_norm, apfdc_asc.value_norm, apfdc_dsc.value_norm
 
     def test_heuristics(self, dataset_df, results_path):
         apfd_results = {"build": []}
         apfdc_results = {"build": []}
         all_builds = dataset_df[Feature.BUILD].unique().tolist()
         all_builds.sort(key=lambda b: self.build_time_d[b])
+        
         logging.info("Starting to test heuristics")
         for build in tqdm(all_builds, desc="Testing heuristics"):
             suite_ds = dataset_df[dataset_df[Feature.BUILD] == build]
@@ -322,16 +338,44 @@ class RankLibLearner:
                 apfd_asc, apfd_dsc, apfdc_asc, apfdc_dsc = self.evaluate_heuristic(
                     fname, suite_ds
                 )
+
                 apfd_results.setdefault(f"{fid}-asc", []).append(apfd_asc)
                 apfd_results.setdefault(f"{fid}-dsc", []).append(apfd_dsc)
                 apfdc_results.setdefault(f"{fid}-asc", []).append(apfdc_asc)
                 apfdc_results.setdefault(f"{fid}-dsc", []).append(apfdc_dsc)
+        
         pd.DataFrame(apfd_results).to_csv(
             results_path / "heuristic_apfd_results.csv", index=False
         )
+        
         pd.DataFrame(apfdc_results).to_csv(
             results_path / "heuristic_apfdc_results.csv", index=False
         )
+
+    def run_feature_selection_experiments(self, dataset_df, name, results_path, ranker=None):
+        numberOfFeatures = dataset_df.shape[1] - 4
+        logging.info(f"Using {numberOfFeatures} feature(s)")
+        
+        if ranker == None:
+            ranker = (self.config.best_ranker, self.config.best_ranker_params)
+        
+        logging.info("Converting data to RankLib format.")
+        ranklib_ds = self.convert_to_ranklib_dataset(dataset_df)
+        logging.info("Finished converting data to RankLib format.")
+        
+        traning_sets_path = results_path / name
+        self.create_ranklib_training_sets(ranklib_ds, traning_sets_path, force=True)
+
+        all_ds_paths = list(p for p in traning_sets_path.glob("*") if p.is_dir())
+        custom_ds_paths = FeatureSelectionService.pick_evenly_distributed_items(all_ds_paths, 5)
+        results = self.train_and_test_all(traning_sets_path, ranker, dataset_df, custom_ds_paths)
+        results.to_csv(traning_sets_path / f"results_{numberOfFeatures}.csv", index=False)
+        
+        candidates = FeatureSelectionService.get_feature_candidates_to_remove(custom_ds_paths)
+        id_to_name = {v: k for k, v in self.feature_id_map.items()}
+        dropped_feature_names = [id_to_name.get(feature_id) for feature_id in candidates if feature_id in id_to_name]
+
+        return dropped_feature_names
 
     def run_accuracy_experiments(self, dataset_df, name, results_path, ranker=None):
         if ranker == None:

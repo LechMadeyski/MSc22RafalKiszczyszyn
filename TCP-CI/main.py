@@ -33,6 +33,10 @@ def learn(args):
         ExperimentsService.run_all_tcp_rankers(args)
 
 
+def select_features(args):
+    ExperimentsService.run_feature_selection_experiments(args)
+
+
 def hypopt(args):
     ExperimentsService.hyp_param_opt(args)
 
@@ -120,6 +124,10 @@ def main():
         "learn",
         help="Perform learning experiments on collected features using RankLib.",
     )
+    feature_selection_parser = subparsers.add_parser(
+        "rfe",
+        help="Select best features using RFE algorithm and best ML ranking model in RankLib."
+    )
     hypopt_parser = subparsers.add_parser(
         "hypopt",
         help="Perform hyperparameter optimization for the best ML ranking model in RankLib.",
@@ -188,7 +196,23 @@ def main():
         help="Specifies the experiment to run. Only works when the best ranking model is selected.",
         type=Experiment,
         default=Experiment.FULL,
-        choices=[e.name for e in Experiment],
+        choices=Experiment,
+    )
+
+    feature_selection_parser.set_defaults(func=select_features)
+    feature_selection_parser.add_argument(
+        "-o",
+        "--output-path",
+        help="Specifies the directory to save and load resulting datasets.",
+        type=Path,
+        default=".",
+    )
+    feature_selection_parser.add_argument(
+        "-t",
+        "--test-count",
+        help="Specifies the number of recent builds to test the trained models on.",
+        type=int,
+        default=50,
     )
 
     hypopt_parser.set_defaults(func=hypopt)
@@ -246,7 +270,7 @@ def main():
         default=".",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(["rfe", "-t", "30", "-o", "C:\\Users\\rafal\\MT\\repos\\MSc22RafalKiszczyszyn\\TCP-CI\\datasets\\Angel-ML@angel"])
     args.output_path.mkdir(parents=True, exist_ok=True)
     args.unique_separator = "\t"
     args.best_ranker = 8

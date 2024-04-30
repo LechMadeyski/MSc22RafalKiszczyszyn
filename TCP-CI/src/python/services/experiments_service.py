@@ -12,6 +12,20 @@ from .data_service import DataService
 from pathlib import Path
 from enum import Enum
 import logging
+import os
+
+def read_last_line(file_path):
+    # Check if the file exists
+    if not os.path.exists(file_path):
+        return None
+
+    # Read the file and return the last line
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+        if lines:
+            return lines[-1].strip()  # Using strip() to remove any trailing newline character
+        else:
+            return None
 
 
 class Experiment(Enum):
@@ -32,6 +46,52 @@ class Experiment(Enum):
 
 
 class ExperimentsService:
+    @staticmethod
+    def run_feature_selection_experiments(args):
+        dataset_path = args.output_path / "dataset.csv"
+        if not dataset_path.exists():
+            logging.error("No dataset.csv found in the output directory. Aborting ...")
+            sys.exit()
+        
+        logging.info("Reading the dataset.")
+        learner = RankLibLearner(args)
+        dataset_df = pd.read_csv(dataset_path)
+        builds_count = dataset_df[Feature.BUILD].nunique()
+        if builds_count <= args.test_count:
+            logging.error(
+                f"Not enough builds for training: require at least {args.test_count + 1}, found {builds_count}"
+            )
+            sys.exit()
+        
+        results_path = args.output_path / "tsp_accuracy_results"
+        outliers_dataset_df = DataService.remove_outlier_tests(
+            args.output_path, dataset_df
+        )
+        logging.info("Finished reading the dataset.")
+
+        logging.info(
+            f"***** Running RFE experiment for {dataset_path.parent.name} *****"
+        )
+
+        features_file_path = os.path.join(results_path, "feature-selection", "dropped.txt")
+        line = read_last_line(features_file_path)
+        dropped_features = line.split(";") if line else []
+        while len(dropped_features) <= 145:            
+            logging.info(f"Number of dropped features: {len(dropped_features)}")
+
+            learner.update_dropped_features(dropped_features)
+            new_dropped_features = learner.run_feature_selection_experiments(
+                outliers_dataset_df.drop(dropped_features, axis=1),
+                "feature-selection",
+                results_path
+            )
+
+            dropped_features.extend(new_dropped_features)
+            with open(features_file_path, 'a') as file:
+                file.write(";".join(dropped_features) + "\n")
+        
+        logging.info("Done feature selection experiments")
+    
     @staticmethod
     def run_best_ranker_experiments(args):
         dataset_path = args.output_path / "dataset.csv"
