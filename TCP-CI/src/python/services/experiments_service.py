@@ -1,14 +1,15 @@
 import pandas as pd
-from ..decay_dataset_factory import DecayDatasetFactory
-from ..dataset_factory import DatasetFactory
+# from ..decay_dataset_factory import DecayDatasetFactory
+# from ..dataset_factory import DatasetFactory
 from ..feature_extractor.feature import Feature
-from ..module_factory import ModuleFactory
+# from ..module_factory import ModuleFactory
 import sys
 from ..ranklib_learner import RankLibLearner
-from ..code_analyzer.code_analyzer import AnalysisLevel
-from ..results.results_analyzer import ResultAnalyzer
+# from ..code_analyzer.code_analyzer import AnalysisLevel
+# from ..results.results_analyzer import ResultAnalyzer
 from ..hyp_param_opt import HypParamOpt
 from .data_service import DataService
+from ..rl.TestcaseExecutionDataLoader import TestCaseExecutionDataLoader
 from pathlib import Path
 from enum import Enum
 import logging
@@ -46,6 +47,57 @@ class Experiment(Enum):
 
 
 class ExperimentsService:
+    @staticmethod
+    def run_rl_based_experiments(args):
+        features = args.features
+        exp_name = "rl"
+
+        if args.oversampling:
+            exp_name += "-os"
+
+        if features is not None:
+            exp_name += f"-f{len(features)}"
+
+        if args.replay_ratio > 0:
+            exp_name += f"-er{args.replay_ratio}"
+
+        if args.policy == "LSTM":
+            exp_name += f"-lstm"
+
+        loader = TestCaseExecutionDataLoader(args.output_path)
+        loader.load_data()
+        loader.test_data = DataService.remove_outlier_tests(
+            args.output_path, loader.test_data
+        )
+
+        ci_logs_train, ci_logs_test = loader.pre_process(features=features, oversampling=args.oversampling)
+
+        from ..rl.TPDRL import experiment
+        from ..rl.Config import Config
+
+        conf = Config()
+        conf.win_size = 4
+        conf.cycle_count = 999999
+        conf.first_cycle = 0
+
+        conf.output_path = str(args.output_path / "tsp_accuracy_results" / exp_name)
+        conf.log_file = str(conf.output_path + "\\log.txt")
+        
+        experiment(
+            mode="PAIRWISE", 
+            algo=("ACER", {"replay_ratio": args.replay_ratio, "policy": args.policy}), 
+            train_ds=ci_logs_train,
+            test_ds=ci_logs_test, 
+            start_cycle=0, 
+            end_cycle=99999999, 
+            episodes=200, 
+            model_path=conf.output_path,
+            dataset_name="",
+            conf=conf)
+
+        return
+        
+    
     @staticmethod
     def run_feature_selection_experiments(args):
         dataset_path = args.output_path / "dataset.csv"
@@ -220,34 +272,37 @@ class ExperimentsService:
 
     @staticmethod
     def run_decay_test_experiments(args):
-        logging.info(f"Running decay tests for {args.output_path.name}")
-        repo_miner_class = ModuleFactory.get_repository_miner(AnalysisLevel.FILE)
-        repo_miner = repo_miner_class(args)
-        change_history_df = repo_miner.load_entity_change_history()
-        dataset_factory = DatasetFactory(
-            args,
-            change_history_df,
-            repo_miner,
-        )
-        dataset_df = pd.read_csv(args.output_path / "dataset.csv")
-        decay_ds_factory = DecayDatasetFactory(dataset_factory, args)
-        models_path = args.output_path / "tsp_accuracy_results" / "full-outliers"
-        decay_ds_factory.create_decay_datasets(dataset_df, models_path)
+        pass
+        # logging.info(f"Running decay tests for {args.output_path.name}")
+        # repo_miner_class = ModuleFactory.get_repository_miner(AnalysisLevel.FILE)
+        # repo_miner = repo_miner_class(args)
+        # change_history_df = repo_miner.load_entity_change_history()
+        # dataset_factory = DatasetFactory(
+        #     args,
+        #     change_history_df,
+        #     repo_miner,
+        # )
+        # dataset_df = pd.read_csv(args.output_path / "dataset.csv")
+        # decay_ds_factory = DecayDatasetFactory(dataset_factory, args)
+        # models_path = args.output_path / "tsp_accuracy_results" / "full-outliers"
+        # decay_ds_factory.create_decay_datasets(dataset_df, models_path)
 
-        learner = RankLibLearner(args)
-        datasets_path = args.output_path / "decay_datasets"
-        learner.run_decay_test_experiments(datasets_path, models_path)
-        logging.info(f"All finished and results are saved at {datasets_path}")
-        print()
+        # learner = RankLibLearner(args)
+        # datasets_path = args.output_path / "decay_datasets"
+        # learner.run_decay_test_experiments(datasets_path, models_path)
+        # logging.info(f"All finished and results are saved at {datasets_path}")
+        # print()
 
     @staticmethod
     def analyze_results(args):
-        result_analyzer = ResultAnalyzer(args)
-        result_analyzer.analyze_results()
+        pass
+        # result_analyzer = ResultAnalyzer(args)
+        # result_analyzer.analyze_results()
 
     @staticmethod
     def hyp_param_opt(args):
-        optimizer = HypParamOpt(args)
-        logging.info(f"***** Running {args.output_path.name} hypopt *****")
-        build_ds_path = Path(args.output_path / "hyp_param_opt" / str(args.build))
-        optimizer.run_optimization(build_ds_path, args.comb_index)
+        pass
+        # optimizer = HypParamOpt(args)
+        # logging.info(f"***** Running {args.output_path.name} hypopt *****")
+        # build_ds_path = Path(args.output_path / "hyp_param_opt" / str(args.build))
+        # optimizer.run_optimization(build_ds_path, args.comb_index)

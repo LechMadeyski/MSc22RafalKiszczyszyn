@@ -1,13 +1,13 @@
 import os
 
-os.add_dll_directory(os.environ["SCITOOLS_HOME"])
+# os.add_dll_directory(os.environ["SCITOOLS_HOME"])
 os.environ["OUTDATED_IGNORE"] = "1"
 
-from src.python.services.data_collection_service import DataCollectionService
+# from src.python.services.data_collection_service import DataCollectionService
 from src.python.services.experiments_service import ExperimentsService, Experiment
 import argparse
-from src.python.code_analyzer.code_analyzer import AnalysisLevel
-from src.python.entities.entity import Language
+# from src.python.code_analyzer.code_analyzer import AnalysisLevel
+# from src.python.entities.entity import Language
 from pathlib import Path
 import logging
 
@@ -19,12 +19,12 @@ logging.basicConfig(
 
 
 def dataset(args):
-    DataCollectionService.create_dataset(args)
-
+    # DataCollectionService.create_dataset(args)
+    pass
 
 def tr_torrent(args):
-    DataCollectionService.process_tr_torrent(args)
-
+    # DataCollectionService.process_tr_torrent(args)
+    pass
 
 def learn(args):
     if args.ranking_models == "best":
@@ -32,6 +32,8 @@ def learn(args):
     elif args.ranking_models == "all":
         ExperimentsService.run_all_tcp_rankers(args)
 
+def learn_rl(args):
+    ExperimentsService.run_rl_based_experiments(args)
 
 def select_features(args):
     ExperimentsService.run_feature_selection_experiments(args)
@@ -77,14 +79,14 @@ def add_dataset_parser_arguments(parser):
         type=Path,
         default=None,
     )
-    parser.add_argument(
-        "-l",
-        "--level",
-        help="Specifies the granularity of feature extraction.",
-        type=AnalysisLevel,
-        choices=[AnalysisLevel.FILE],
-        default=AnalysisLevel.FILE,
-    )
+    # parser.add_argument(
+    #     "-l",
+    #     "--level",
+    #     help="Specifies the granularity of feature extraction.",
+    #     type=AnalysisLevel,
+    #     choices=[AnalysisLevel.FILE],
+    #     default=AnalysisLevel.FILE,
+    # )
     parser.add_argument(
         "-o",
         "--output-path",
@@ -92,13 +94,13 @@ def add_dataset_parser_arguments(parser):
         type=Path,
         default=".",
     )
-    parser.add_argument(
-        "--language",
-        help="Project's main language",
-        type=Language,
-        choices=[Language.JAVA],
-        default=Language.JAVA,
-    )
+    # parser.add_argument(
+    #     "--language",
+    #     help="Project's main language",
+    #     type=Language,
+    #     choices=[Language.JAVA],
+    #     default=Language.JAVA,
+    # )
     parser.add_argument(
         "-n",
         "--build-window",
@@ -108,6 +110,8 @@ def add_dataset_parser_arguments(parser):
         default=6,
     )
 
+
+ARGS = None
 
 def main():
     parser = argparse.ArgumentParser()
@@ -123,6 +127,10 @@ def main():
     learn_parser = subparsers.add_parser(
         "learn",
         help="Perform learning experiments on collected features using RankLib.",
+    )
+    learn_rl_parser = subparsers.add_parser(
+        "rl",
+        help="Perform learning experiments using pairwise ACER.",
     )
     feature_selection_parser = subparsers.add_parser(
         "rfe",
@@ -199,6 +207,22 @@ def main():
         choices=Experiment,
     )
 
+    learn_rl_parser.set_defaults(func=learn_rl)
+    learn_rl_parser.add_argument(
+        "-o",
+        "--output-path",
+        help="Specifies the directory to save and load resulting datasets.",
+        type=Path,
+        default=".",
+    )
+    learn_rl_parser.add_argument(
+        "-t",
+        "--test-count",
+        help="Specifies the number of recent builds to test the trained models on.",
+        type=int,
+        default=50,
+    )
+
     feature_selection_parser.set_defaults(func=select_features)
     feature_selection_parser.add_argument(
         "-o",
@@ -270,7 +294,12 @@ def main():
         default=".",
     )
 
-    args = parser.parse_args(["rfe", "-t", "30", "-o", "C:\\Users\\rafal\\MT\\repos\\MSc22RafalKiszczyszyn\\TCP-CI\\datasets\\Angel-ML@angel"])
+    args = parser.parse_args(ARGS)
+    args.features = ['REC_Age', 'TES_PRO_AllCommitersExperience', 'TES_PRO_OwnersExperience', 'TES_COM_CountLineCodeDecl', 'REC_TotalMaxExeTime', 'TES_PRO_CommitCount', 'TES_COM_CountStmtDecl', 'TES_COM_CountLine', 'TES_PRO_OwnersContribution', 'TES_COM_CountLineBlank', 'TES_COM_RatioCommentToCode', 'TES_COM_CountStmt', 'REC_TotalAvgExeTime', 'REC_RecentAvgExeTime', 'TES_COM_CountStmtExe', 'TES_COM_CountLineCodeExe', 'REC_LastExeTime', 'TES_COM_CountLineCode', 'REC_RecentMaxExeTime', 'TES_COM_CountLineComment']
+    args.oversampling = True
+    args.replay_ratio = 0
+    args.policy = "LSTM"
+
     args.output_path.mkdir(parents=True, exist_ok=True)
     args.unique_separator = "\t"
     args.best_ranker = 8
@@ -287,4 +316,15 @@ def main():
 
 
 if __name__ == "__main__":
+    workdir = "C:\\Users\\rafal\\MT\\repos\\MSc22RafalKiszczyszyn\\TCP-CI\\datasets"
+    ARGS = ["rl", "-t", "50", "-o", workdir + "\\spring-cloud@spring-cloud-dataflow"]
     main()
+    # subjects = []
+    # for item in os.listdir(workdir):
+    #     item_path = os.path.join(workdir, item)
+    #     if os.path.isdir(item_path):
+    #         subjects.append(item_path)
+    
+    # for subject in subjects:
+    #     ARGS = ["rfe", "-t", "30", "-o", subject]
+    #     main()

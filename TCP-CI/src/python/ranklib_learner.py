@@ -140,7 +140,7 @@ class RankLibLearner:
         return pd.DataFrame(ranklib_ds_rows, columns=headers)
 
     def create_ranklib_training_sets(
-        self, ranklib_ds, output_path, custom_test_builds=None, force=False
+        self, ranklib_ds, output_path, custom_test_builds=None, transform=None, force=False
     ):
         builds = ranklib_ds["i_build"].unique().tolist()
         builds.sort(key=lambda b: self.build_time_d[b])
@@ -153,7 +153,14 @@ class RankLibLearner:
         for i, build in tqdm(list(enumerate(builds)), desc="Creating training sets"):
             if build not in test_builds:
                 continue
+            
             train_ds = ranklib_ds[ranklib_ds["i_build"].isin(builds[:i])]
+            if transform is not None:
+                before = len(train_ds)
+                train_ds = transform(train_ds)
+                after = len(train_ds)
+                logging.info(f"Before transformation: {before}, after: {after}")
+
             if len(train_ds) == 0:
                 continue
             test_ds = ranklib_ds[ranklib_ds["i_build"] == build]
@@ -296,6 +303,8 @@ class RankLibLearner:
         results_df.sort_values("build_time", ignore_index=True, inplace=True)
         results_df.drop("build_time", axis=1, inplace=True)
         
+        print("Avg. APDFc", np.average(results_df['apfdc']), "std", np.std(results_df['apfdc']))
+
         return results_df
 
     def evaluate_heuristic(self, hname, suite_ds):
@@ -351,6 +360,27 @@ class RankLibLearner:
         pd.DataFrame(apfdc_results).to_csv(
             results_path / "heuristic_apfdc_results.csv", index=False
         )
+
+    def run_data_balancing_experiments(self, dataset_df, name, results_path, negatives: pd.DataFrame, ranker=None):
+        if ranker == None:
+            ranker = (self.config.best_ranker, self.config.best_ranker_params)
+        
+        logging.info("Converting data to RankLib format.")
+        ranklib_ds = self.convert_to_ranklib_dataset(dataset_df)
+        logging.info("Finished converting data to RankLib format.")
+        
+        def transform(ds: pd.DataFrame):
+            positives = ds[ds['i_verdict'] > 0]
+            excluded = negatives.sample(frac=1).reset_index(drop=True)['test'].to_list()
+            before = len(ds)
+            ds = ds[~ds["i_test"].isin(excluded[:len(excluded) // 2])]
+            return pd.concat([ds, positives.sample(n=before - len(ds), replace=True)], ignore_index=True)
+           
+        traning_sets_path = results_path / name
+        self.create_ranklib_training_sets(ranklib_ds, traning_sets_path, transform=transform)
+        results = self.train_and_test_all(traning_sets_path, ranker, dataset_df)
+        results.to_csv(traning_sets_path / f"results.csv", index=False)
+        
 
     def run_feature_selection_experiments(self, dataset_df, name, results_path, ranker=None):
         numberOfFeatures = dataset_df.shape[1] - 4

@@ -46,6 +46,10 @@ class EvaluationService:
     @staticmethod
     def evaluate(ranking: pd.DataFrame):
         random = False
+
+        if len(set(ranking["verdict"].values.tolist())) == 1:
+            return EvaluationResult(min=0.5, max=0.5, value=0.5, value_norm=0.5), EvaluationResult(min=0.5, max=0.5, value=0.5, value_norm=0.5) 
+
         if len(set(ranking["rank"].values.tolist())) == 1 and len(ranking) > 1:
             random = True # indicates that ranking is random because of the same rank values.
 
