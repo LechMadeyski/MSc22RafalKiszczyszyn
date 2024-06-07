@@ -19,6 +19,16 @@ class TcpRandomOverSampler:
         self._sampler.fit_resample(X, y)
         for index in self._sampler.sample_indices_:
             yield df.iloc[index]
+    
+    def resample(self, df: pd.DataFrame, y_column, drop):
+        if y_column not in drop:
+            drop.append(y_column)
+        
+        X = df.drop(labels=drop, axis=1) 
+        y = df[y_column]
+
+        self._sampler.fit_resample(X, y)
+        df.iloc[[self._sampler.sample_indices_]]
 
 
 class TestCaseExecutionDataLoader:    
@@ -60,7 +70,7 @@ class TestCaseExecutionDataLoader:
 
         dataset = pd.read_csv(self.data_path / "dataset.csv")
         dataset['Verdict'] = dataset['Verdict'].apply(lambda v: int(v > 0))
-        self.test_data = dataset
+        self.test_data = dataset # self._normalize_dataset(dataset)
 
         # builds: list = dataset["Build"].unique().tolist()
         # builds.sort(key=lambda b: self.build_time_d[b])
@@ -99,7 +109,7 @@ class TestCaseExecutionDataLoader:
                 if test_id not in tests:
                     tests[test_id] = [0, 0, 0, 0]
                 
-                if features is not None:
+                if features is not None and len(features) > 0:
                     others = test_case[features].tolist()
                 else:
                     others = test_case.drop(labels=["Build", "Test", "Verdict", "Duration", "REC_TotalAvgExeTime"]).tolist()
@@ -120,8 +130,6 @@ class TestCaseExecutionDataLoader:
                     last_results.append(int(test_case["Verdict"]))
                     tests[test_id] = last_results
                     visited.add(test_id)
-                else:
-                    print(build, test_id, "Already visited!")
 
             logs.append(log)
         return logs

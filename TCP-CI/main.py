@@ -17,6 +17,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+K = None
 
 def dataset(args):
     # DataCollectionService.create_dataset(args)
@@ -294,11 +295,24 @@ def main():
         default=".",
     )
 
+    FEATURES = {
+        15: ['REC_Age', 'TES_PRO_OwnersExperience', 'TES_PRO_AllCommitersExperience', 'REC_TotalMaxExeTime', 'REC_TotalAvgExeTime', 'REC_RecentAvgExeTime', 'TES_COM_CountLine', 'TES_COM_CountLineCodeDecl', 'REC_LastExeTime', 'REC_RecentMaxExeTime', 'TES_PRO_OwnersContribution', 'TES_PRO_CommitCount', 'TES_COM_CountStmtExe', 'TES_COM_RatioCommentToCode', 'TES_COM_CountStmt'],
+        30: ['TES_PRO_CommitCount', 'TES_COM_CountLine', 'TES_PRO_OwnersExperience', 'TES_PRO_AllCommitersExperience', 'TES_COM_CountLineBlank', 'REC_Age', 'TES_COM_CountLineCodeDecl', 'REC_TotalMaxExeTime', 'TES_COM_CountStmtDecl', 'TES_COM_CountStmt', 'TES_COM_CountStmtExe', 'REC_LastExeTime', 'REC_TotalAvgExeTime', 'TES_COM_CountLineCodeExe', 'TES_COM_RatioCommentToCode', 'REC_RecentMaxExeTime', 'TES_COM_CountLineCode', 'REC_RecentAvgExeTime', 'COD_COV_PRO_IMP_AllCommitersExperience', 'TES_PRO_OwnersContribution', 'COD_COV_PRO_IMP_OwnersExperience', 'REC_TotalFailRate', 'REC_LastTransitionAge', 'COV_ImpScoreSum', 'COD_COV_COM_IMP_RatioCommentToCode', 'REC_TotalTransitionRate', 'COD_COV_PRO_IMP_CommitCount', 'TES_COM_CountLineComment', 'TES_COM_SumCyclomaticStrict', 'TES_COM_CountDeclMethodPublic'],
+        50: ['TES_COM_CountLineCodeExe', 'TES_COM_CountStmtDecl', 'TES_PRO_CommitCount', 'TES_COM_CountStmt', 'TES_COM_CountStmtExe', 'TES_COM_CountLine', 'TES_PRO_OwnersExperience', 'TES_PRO_AllCommitersExperience', 'TES_COM_SumCyclomaticStrict', 'TES_COM_CountLineBlank', 'TES_COM_RatioCommentToCode', 'REC_Age', 'TES_COM_CountLineCode', 'TES_COM_CountLineComment', 'TES_COM_CountLineCodeDecl', 'REC_TotalMaxExeTime', 'REC_TotalAvgExeTime', 'TES_PRO_OwnersContribution', 'REC_LastExeTime', 'REC_TotalFailRate', 'REC_RecentMaxExeTime', 'REC_RecentAvgExeTime', 'TES_COM_SumCyclomaticModified', 'TES_COM_SumCyclomatic', 'COD_COV_PRO_IMP_AllCommitersExperience', 'REC_TotalTransitionRate', 'TES_COM_CountDeclMethodPublic', 'COD_COV_PRO_IMP_CommitCount', 'COD_COV_COM_IMP_RatioCommentToCode', 'REC_LastFailureAge', 'COD_COV_PRO_IMP_OwnersExperience', 'COV_ImpScoreSum', 'COD_COV_PRO_IMP_OwnersContribution', 'REC_LastTransitionAge', 'TES_COM_CountDeclInstanceMethod', 'REC_TotalExcRate', 'COD_COV_COM_IMP_CountDeclClassVariable', 'COD_COV_COM_IMP_CountLineComment', 'COD_COV_COM_IMP_CountDeclInstanceVariable', 'TES_COM_SumEssential', 'COD_COV_COM_C_RatioCommentToCode', 'COD_COV_CHN_C_LinesAdded', 'TES_COM_CountDeclMethod', 'COD_COV_COM_IMP_MaxCyclomaticStrict', 'REC_MaxTestFileTransitionRate', 'TES_COM_CountDeclExecutableUnit', 'REC_MaxTestFileFailRate', 'COD_COV_COM_IMP_CountDeclMethodDefault', 'COD_COV_PRO_C_OwnersExperience', 'COD_COV_COM_IMP_CountLineCodeDecl'],
+        80: ['TES_COM_SumCyclomaticModified', 'TES_COM_CountLineCodeExe', 'TES_COM_CountStmtDecl', 'TES_PRO_CommitCount', 'TES_COM_CountStmt', 'TES_COM_SumCyclomatic', 'TES_COM_CountStmtExe', 'COD_COV_PRO_IMP_AllCommitersExperience', 'TES_COM_CountLine', 'TES_PRO_OwnersExperience', 'TES_PRO_AllCommitersExperience', 'TES_COM_SumCyclomaticStrict', 'TES_COM_CountDeclMethodPublic', 'TES_COM_CountLineBlank', 'TES_COM_RatioCommentToCode', 'REC_Age', 'TES_COM_CountLineCode', 'TES_COM_CountLineComment', 'REC_RecentAvgExeTime', 'TES_COM_CountLineCodeDecl', 'COD_COV_COM_IMP_RatioCommentToCode', 'REC_TotalMaxExeTime', 'REC_TotalAvgExeTime', 'COV_ImpScoreSum', 'TES_PRO_OwnersContribution', 'REC_TotalTransitionRate', 'TES_COM_SumEssential', 'REC_LastExeTime', 'REC_LastTransitionAge', 'REC_LastFailureAge', 'REC_TotalFailRate', 'COD_COV_PRO_IMP_OwnersExperience', 'TES_COM_CountDeclFunction', 'TES_COM_CountDeclExecutableUnit', 'COD_COV_COM_IMP_CountLineComment', 'TES_COM_CountDeclInstanceMethod', 'REC_RecentMaxExeTime', 'COD_COV_PRO_IMP_CommitCount', 'TES_COM_MaxCyclomaticModified', 'COD_COV_COM_IMP_CountDeclInstanceVariable', 'TES_COM_CountDeclMethod', 'COD_COV_PRO_IMP_OwnersContribution', 'COD_COV_COM_IMP_CountDeclInstanceMethod', 'TES_COM_MaxCyclomatic', 'COV_ImpCount', 'REC_TotalExcRate', 'COD_COV_COM_IMP_CountLineCodeExe', 'REC_MaxTestFileTransitionRate', 'TES_COM_MaxCyclomaticStrict', 'TES_PRO_DistinctDevCount', 'COD_COV_COM_IMP_CountDeclClassVariable', 'COD_COV_COM_IMP_CountDeclClassMethod', 'REC_TotalAssertRate', 'COD_COV_COM_IMP_CountDeclMethodPublic', 'COD_COV_PRO_IMP_MinorContributorCount', 'COD_COV_COM_IMP_MaxCyclomaticStrict', 'TES_COM_MaxNesting', 'DET_COV_IMP_Faults', 'COD_COV_COM_IMP_MaxEssential', 'COD_COV_PRO_IMP_DistinctDevCount', 'REC_MaxTestFileFailRate', 'COD_COV_COM_IMP_MaxNesting', 'COD_COV_COM_IMP_CountLineCodeDecl', 'COD_COV_COM_IMP_CountStmtDecl', 'COV_ChnScoreSum', 'COD_COV_CHN_C_LinesAdded', 'TES_PRO_MinorContributorCount', 'TES_COM_CountDeclClassVariable', 'COD_COV_COM_IMP_MaxCyclomatic', 'TES_COM_CountDeclInstanceVariable', 'COD_COV_COM_IMP_CountDeclMethodDefault', 'COD_COV_PRO_C_OwnersContribution', 'REC_RecentTransitionRate', 'COD_COV_PRO_C_OwnersExperience', 'COD_COV_CHN_C_LinesDeleted', 'COD_COV_PRO_C_AllCommitersExperience', 'COD_COV_CHN_C_AddedChangeScattering', 'COD_COV_COM_IMP_MaxCyclomaticModified', 'COD_COV_COM_IMP_CountDeclMethodProtected', 'REC_LastVerdict']
+    }
+
+    FEATURES_OS = {
+        15: ['REC_Age', 'REC_TotalMaxExeTime', 'TES_PRO_OwnersExperience', 'TES_PRO_AllCommitersExperience', 'REC_LastExeTime', 'REC_RecentAvgExeTime', 'REC_RecentMaxExeTime', 'REC_TotalAvgExeTime', 'TES_COM_CountLine', 'TES_PRO_OwnersContribution', 'TES_PRO_CommitCount', 'TES_COM_CountLineCodeDecl', 'TES_COM_CountStmtDecl', 'REC_TotalFailRate', 'COD_COV_PRO_IMP_AllCommitersExperience'],
+        30: ['TES_PRO_AllCommitersExperience', 'REC_TotalMaxExeTime', 'TES_PRO_CommitCount', 'REC_Age', 'REC_LastExeTime', 'REC_RecentMaxExeTime', 'TES_COM_CountLine', 'TES_PRO_OwnersExperience', 'TES_COM_RatioCommentToCode', 'TES_COM_CountLineCodeDecl', 'TES_COM_CountStmtDecl', 'REC_RecentAvgExeTime', 'TES_COM_CountStmt', 'TES_COM_CountLineBlank', 'REC_TotalAvgExeTime', 'TES_COM_CountStmtExe', 'TES_COM_CountLineCodeExe', 'TES_COM_CountLineCode', 'REC_TotalTransitionRate', 'TES_PRO_OwnersContribution', 'REC_TotalFailRate', 'COD_COV_PRO_IMP_AllCommitersExperience', 'COD_COV_PRO_IMP_OwnersExperience', 'REC_LastTransitionAge', 'REC_TotalExcRate', 'TES_COM_CountLineComment', 'COD_COV_COM_IMP_RatioCommentToCode', 'REC_LastFailureAge', 'COV_ImpScoreSum', 'TES_COM_CountDeclMethodPublic']
+    }
+
     args = parser.parse_args(ARGS)
-    args.features = ['REC_Age', 'TES_PRO_AllCommitersExperience', 'TES_PRO_OwnersExperience', 'TES_COM_CountLineCodeDecl', 'REC_TotalMaxExeTime', 'TES_PRO_CommitCount', 'TES_COM_CountStmtDecl', 'TES_COM_CountLine', 'TES_PRO_OwnersContribution', 'TES_COM_CountLineBlank', 'TES_COM_RatioCommentToCode', 'TES_COM_CountStmt', 'REC_TotalAvgExeTime', 'REC_RecentAvgExeTime', 'TES_COM_CountStmtExe', 'TES_COM_CountLineCodeExe', 'REC_LastExeTime', 'TES_COM_CountLineCode', 'REC_RecentMaxExeTime', 'TES_COM_CountLineComment']
-    args.oversampling = True
+    
+    args.features = FEATURES[K]
+    args.oversampling = False
     args.replay_ratio = 0
-    args.policy = "LSTM"
+    args.policy = "MLP"
 
     args.output_path.mkdir(parents=True, exist_ok=True)
     args.unique_separator = "\t"
@@ -315,16 +329,30 @@ def main():
     args.func(args)
 
 
+SELECTED = ['S2', 'S8', 'S9', 'S12', 'S13', 'S14', 'S16', 'S20', 'S21', 'S22', 'S23', 'S24', 'S25']
+
 if __name__ == "__main__":
-    workdir = "C:\\Users\\rafal\\MT\\repos\\MSc22RafalKiszczyszyn\\TCP-CI\\datasets"
-    ARGS = ["rl", "-t", "50", "-o", workdir + "\\spring-cloud@spring-cloud-dataflow"]
-    main()
-    # subjects = []
-    # for item in os.listdir(workdir):
-    #     item_path = os.path.join(workdir, item)
-    #     if os.path.isdir(item_path):
-    #         subjects.append(item_path)
+    import pandas as pd
+    import random
+    import numpy as np
+
+    random.seed(44)
+    np.random.seed(44)
+
+    db_path = "C:\\Users\\rafal\\MT\\repos\\MSc22RafalKiszczyszyn\\TCP-CI\\analysis\\datasets.csv"
+    db = pd.read_csv(db_path)
     
-    # for subject in subjects:
-    #     ARGS = ["rfe", "-t", "30", "-o", subject]
-    #     main()
+    workdir = "C:\\Users\\rafal\\MT\\repos\\MSc22RafalKiszczyszyn\\TCP-CI\\datasets\\"
+    
+    for k in [30, 50, 80]:
+        K = k
+        for _, subject in db.iterrows():
+            if subject['SID'] not in SELECTED:
+                continue
+            
+            subject_path = subject['Subject'].replace("/", "@")
+            ARGS = ["learn", "-t", "50", "-r", "best", "-e", "FULL", "-o", workdir + subject_path]
+            # ARGS = ["rfe", "-t", "50", "-o", workdir + subject_path]
+            # ARGS = ["rl", "-t", "50", "-o", workdir + subject_path]
+            main()
+        pass

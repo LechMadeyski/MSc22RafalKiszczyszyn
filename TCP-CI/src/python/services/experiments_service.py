@@ -55,7 +55,7 @@ class ExperimentsService:
         if args.oversampling:
             exp_name += "-os"
 
-        if features is not None:
+        if features is not None and len(features) > 0:
             exp_name += f"-f{len(features)}"
 
         if args.replay_ratio > 0:
@@ -99,7 +99,7 @@ class ExperimentsService:
         
     
     @staticmethod
-    def run_feature_selection_experiments(args):
+    def run_feature_selection_experiments(args): 
         dataset_path = args.output_path / "dataset.csv"
         if not dataset_path.exists():
             logging.error("No dataset.csv found in the output directory. Aborting ...")
@@ -125,7 +125,11 @@ class ExperimentsService:
             f"***** Running RFE experiment for {dataset_path.parent.name} *****"
         )
 
-        features_file_path = os.path.join(results_path, "feature-selection", "dropped.txt")
+        exp_name = 'feature-selection'
+        if args.oversampling:
+            exp_name += '-os'
+        
+        features_file_path = os.path.join(results_path, exp_name, "dropped.txt")
         line = read_last_line(features_file_path)
         dropped_features = line.split(";") if line else []
         while len(dropped_features) <= 145:            
@@ -134,8 +138,9 @@ class ExperimentsService:
             learner.update_dropped_features(dropped_features)
             new_dropped_features = learner.run_feature_selection_experiments(
                 outliers_dataset_df.drop(dropped_features, axis=1),
-                "feature-selection",
-                results_path
+                exp_name,
+                results_path,
+                oversampling=args.oversampling
             )
 
             dropped_features.extend(new_dropped_features)
@@ -168,11 +173,23 @@ class ExperimentsService:
         logging.info(
             f"***** Running {args.experiment.value} experiment for {dataset_path.parent.name} *****"
         )
+        
         if args.experiment == Experiment.FULL:
+            exp_name = "full-outliers"
+            if args.oversampling:
+                exp_name += "-os"
+            
+            if args.features:
+                exp_name += f"-f{len(args.features)}"
+                x = [Feature.BUILD, Feature.VERDICT, Feature.TEST, Feature.DURATION]
+                x.extend(args.features)
+                outliers_dataset_df = outliers_dataset_df[x]
+
             learner.run_accuracy_experiments(
-                outliers_dataset_df, "full-outliers", results_path
+                outliers_dataset_df, exp_name, results_path, oversampling=args.oversampling
             )
-            learner.test_heuristics(outliers_dataset_df, results_path / "full-outliers")
+        
+        
         elif args.experiment == Experiment.WO_IMP:
             learner.run_accuracy_experiments(
                 outliers_dataset_df.drop(Feature.IMPACTED_FEATURES, axis=1),

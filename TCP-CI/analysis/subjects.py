@@ -71,18 +71,17 @@ class PFA(object):
 if __name__ == '__main__':
     pfa = PFA(explained_var=0.95, q=8)
     df = pd.read_csv('C:\\Users\\rafal\\MT\\repos\\MSc22RafalKiszczyszyn\\TCP-CI\\analysis\\datasets.csv')
-    SID = df["SID"]
-    df_ = df[["Avg. TCFR / Build (%)","# Observations","Best APFDc"]]
     
-    # melted_df = df.melt(id_vars=['SID'], var_name='Feature', value_name='Value')
-    # pivoted_df = melted_df.pivot(index='Feature', columns='SID', values='Value').reset_index()
-    # pivoted_df.columns.name = None
+    df = df[df['# Observations'] < 10_000]
+    print(df.sort_values('# Observations', ascending=True, ignore_index=True)[['SID', '# Observations']])
+    print(df['SID'].to_list())
+
+    # SID = df["SID"]
+    # df_ = df[["Avg. TCFR / Build (%)","# Observations"]]
     
-    # df.drop(['Build', 'Test'], axis=1, inplace=True)
+    # pfa.fit(df_.values)
+    # print(len(pfa.indices_))
+    # selected = list(SID[pfa.indices_])
+    # print(sorted(selected, key=lambda sid: int(sid[1:])))
 
-    pfa.fit(df_.values)
-    print(len(pfa.indices_))
-    selected = list(SID[pfa.indices_])
-    print(selected)
-
-    print(df[df["SID"].isin(selected)])
+    # print(df[df["SID"].isin(selected)])

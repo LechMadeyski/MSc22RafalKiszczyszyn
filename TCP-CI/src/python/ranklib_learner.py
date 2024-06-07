@@ -11,6 +11,21 @@ import sys
 import re
 import os
 import logging
+from imblearn.over_sampling import RandomOverSampler
+from datetime import datetime
+
+
+class TcpRandomOverSampler:
+
+    def __init__(self) -> None:
+        self._sampler = RandomOverSampler(random_state=44, sampling_strategy=1.0)
+    
+    def resample(self, df: pd.DataFrame, y_column):
+        X = df.filter(regex='^f\d+$')
+        y = df[y_column]
+
+        self._sampler.fit_resample(X, y)
+        return df.iloc[self._sampler.sample_indices_]
 
 
 class RankLibLearner:
@@ -29,6 +44,7 @@ class RankLibLearner:
     ]
 
     def __init__(self, config):
+        self._sampler = TcpRandomOverSampler()
         self.config = config
         self.feature_id_map_path = config.output_path / "feature_id_map.csv"
         
@@ -140,7 +156,7 @@ class RankLibLearner:
         return pd.DataFrame(ranklib_ds_rows, columns=headers)
 
     def create_ranklib_training_sets(
-        self, ranklib_ds, output_path, custom_test_builds=None, transform=None, force=False
+        self, ranklib_ds, output_path, custom_test_builds=None, transform=None, force=False, oversampling=False
     ):
         builds = ranklib_ds["i_build"].unique().tolist()
         builds.sort(key=lambda b: self.build_time_d[b])
@@ -155,14 +171,12 @@ class RankLibLearner:
                 continue
             
             train_ds = ranklib_ds[ranklib_ds["i_build"].isin(builds[:i])]
-            if transform is not None:
-                before = len(train_ds)
-                train_ds = transform(train_ds)
-                after = len(train_ds)
-                logging.info(f"Before transformation: {before}, after: {after}")
-
             if len(train_ds) == 0:
                 continue
+
+            if oversampling:
+                train_ds = self._sampler.resample(train_ds, 'i_verdict')
+
             test_ds = ranklib_ds[ranklib_ds["i_build"] == build]
             build_out_path = output_path / str(build)
             
@@ -261,16 +275,19 @@ class RankLibLearner:
         results = {
             "build": [], 
             "apfd_min": [], "apfd_max": [], "apfd": [], "r_apfd": [],
-            "apfdc_min": [], "apfdc_max": [], "apfdc": [], "r_apfdc": []
+            "apfdc_min": [], "apfdc_max": [], "apfdc": [], "r_apfdc": [],
+            "time": []
         }
         
         ds_paths = list(p for p in output_path.glob("*") if p.is_dir()) if custom_ds_paths is None else custom_ds_paths 
         logging.info("Starting training phase")
         
         for build_ds_path in tqdm(ds_paths, desc="Training"):
+            start = datetime.now()
             apfd, apfdc = self.train_and_test(
                 build_ds_path, ranker[0], ranker[1], dataset_df
             )
+            stop = datetime.now()
 
             results["build"].append(int(build_ds_path.name))
             
@@ -284,6 +301,8 @@ class RankLibLearner:
             results["apfdc"].append(apfdc.value)
             results["r_apfdc"].append(apfdc.value_norm)
 
+            results["time"].append(stop - start)
+
             if not (build_ds_path / "feature_stats.csv").exists():
                 feature_stats_command = f"java -cp {self.ranklib_path};{self.math3_path} ciir.umass.edu.features.FeatureManager -feature_stats {build_ds_path / 'model.txt'}"
                 feature_stats_out = subprocess.run(
@@ -295,7 +314,10 @@ class RankLibLearner:
                 self.extract_and_save_feature_stats(
                     feature_stats_out.stdout.decode("utf-8"), build_ds_path
                 )
-        
+
+            # df = pd.DataFrame(results)
+            # df.to_csv(output_path / "results.csv", index=False)
+
         results_df = pd.DataFrame(results)
         results_df["build_time"] = results_df["build"].apply(
             lambda b: self.build_time_d[b]
@@ -382,7 +404,7 @@ class RankLibLearner:
         results.to_csv(traning_sets_path / f"results.csv", index=False)
         
 
-    def run_feature_selection_experiments(self, dataset_df, name, results_path, ranker=None):
+    def run_feature_selection_experiments(self, dataset_df, name, results_path, ranker=None, oversampling=False):
         numberOfFeatures = dataset_df.shape[1] - 4
         logging.info(f"Using {numberOfFeatures} feature(s)")
         
@@ -394,10 +416,10 @@ class RankLibLearner:
         logging.info("Finished converting data to RankLib format.")
         
         traning_sets_path = results_path / name
-        self.create_ranklib_training_sets(ranklib_ds, traning_sets_path, force=True)
+        self.create_ranklib_training_sets(ranklib_ds, traning_sets_path, force=True, oversampling=oversampling)
 
         all_ds_paths = list(p for p in traning_sets_path.glob("*") if p.is_dir())
-        custom_ds_paths = FeatureSelectionService.pick_evenly_distributed_items(all_ds_paths, 5)
+        custom_ds_paths = FeatureSelectionService.pick_evenly_distributed_items(all_ds_paths, 10)
         results = self.train_and_test_all(traning_sets_path, ranker, dataset_df, custom_ds_paths)
         results.to_csv(traning_sets_path / f"results_{numberOfFeatures}.csv", index=False)
         
@@ -407,14 +429,14 @@ class RankLibLearner:
 
         return dropped_feature_names
 
-    def run_accuracy_experiments(self, dataset_df, name, results_path, ranker=None):
+    def run_accuracy_experiments(self, dataset_df, name, results_path, ranker=None, oversampling=False):
         if ranker == None:
             ranker = (self.config.best_ranker, self.config.best_ranker_params)
         logging.info("Converting data to RankLib format.")
         ranklib_ds = self.convert_to_ranklib_dataset(dataset_df)
         logging.info("Finished converting data to RankLib format.")
         traning_sets_path = results_path / name
-        self.create_ranklib_training_sets(ranklib_ds, traning_sets_path)
+        self.create_ranklib_training_sets(ranklib_ds, traning_sets_path, oversampling=oversampling)
         results = self.train_and_test_all(traning_sets_path, ranker, dataset_df)
         results.to_csv(traning_sets_path / "results.csv", index=False)
 

@@ -22,23 +22,6 @@ from .PointWiseEnv import CIPointWiseEnv
 import sys
 
 
-def train(trial, model):
-    pass
-
-
-def test(model):
-    pass
-
-
-def millis_interval(start, end):
-    """start and end are datetime instances"""
-    diff = end - start
-    millis = diff.days * 24 * 60 * 60 * 1000
-    millis += diff.seconds * 1000
-    millis += diff.microseconds / 1000
-    return millis
-
-
 # find the cycle with maximum number of test cases
 def get_max_test_cases_count(cycle_logs:[]):
     max_test_cases_count = 0
@@ -50,7 +33,8 @@ def get_max_test_cases_count(cycle_logs:[]):
 
 def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, model_path, dataset_name, conf, verbos=False):
     algo, algo_params = algo
-    
+    results = {"build": [], "time": []}
+
     log_dir = os.path.dirname(conf.log_file)
 #    -- fix end cycle issue
     if not os.path.exists(log_dir):
@@ -62,16 +46,13 @@ def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, 
     if end_cycle >= len(train_ds)-1:
         end_cycle = len(train_ds)
     # check for max cycle and end_cycle and set end_cycle to max if it is larger than max
-    log_file = open(conf.log_file, "a")
-    log_file.write("timestamp,mode,algo,model_name,episodes,steps,cycle_id,training_time,testing_time,winsize,test_cases,failed_test_cases,apfd,nrpa,random_apfd,optimal_apfd" + os.linesep)
     first_round: bool = True
     if start_cycle > 0:
         first_round = False
         previous_model_path = model_path + "/" + mode + "_" + algo + dataset_name + "_" + str(
             0) + "_" + str(start_cycle-1)
     model_save_path = None
-    apfds=[]
-    nrpas=[]
+
     for i in range(start_cycle, end_cycle - 1):
         if (train_ds[i].get_test_cases_count() < 6) or \
                 ( (conf.dataset_type == "simple") and
@@ -96,6 +77,7 @@ def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, 
             steps = int(episodes * (N * (math.log(N,2)+1)))
             env = CIListWiseEnvMultiAction(train_ds[i], conf)
         
+        start = datetime.now()
         print("Training agent with replaying of cycle " + str(i) + " with steps " + str(steps))
 
         if model_save_path:
@@ -108,15 +90,12 @@ def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, 
 
         if first_round:
             tp_agent = TPAgentUtil.create_model(algo, env, params=algo_params)
-            training_start_time = datetime.now()
             tp_agent.learn(total_timesteps=steps, reset_num_timesteps=True, callback=callback_class)
-            training_end_time = datetime.now()
             first_round = False
         else:
             tp_agent = TPAgentUtil.load_model(algo=algo, env=env, path=previous_model_path+".zip")
-            training_start_time = datetime.now()
             tp_agent.learn(total_timesteps=steps, reset_num_timesteps=True, callback=callback_class)
-            training_end_time = datetime.now()
+            
         print("Training agent with replaying of cycle " + str(i) + " is finished")
 
         j = i+1   # test trained agent on next cycles
@@ -139,70 +118,24 @@ def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, 
         elif mode.upper() == 'LISTWISE2':
             env_test = CIListWiseEnvMultiAction(test_ds[j], conf)
 
-        test_time_start = datetime.now()
         test_case_vector = TPAgentUtil.test_agent(env=env_test, algo=algo, model_path=model_save_path+".zip", mode=mode)
-        test_time_end = datetime.now()
         test_case_id_vector = []
+
 
         for test_case in test_case_vector:
             test_case_id_vector.append(str(test_case['test_id']))
             cycle_id_text = test_case['cycle_id']
+        
+        stop = datetime.now()
+        results["build"].append(cycle_id_text)
+        results["time"].append(stop - start)
+        
         if test_ds[j].get_failed_test_cases_count() != 0:
-            apfd = test_ds[j].calc_APFD_ordered_vector(test_case_vector)
-            apfd_optimal = test_ds[j].calc_optimal_APFD()
-            apfd_random = test_ds[j].calc_random_APFD()
-            apfds.append(apfd)
-            
             ranking = pd.DataFrame(test_case_vector)
             ranking[['verdict', 'last_exec_time']].to_csv(conf.output_path + f"\\{cycle_id_text}.csv")
-            
-            # calculate failure metric
-            # df = pd.DataFrame(test_case_vector)  #########################################
-            # failure_metric = 0
-            # for row in df[(df['verdict'] > 0)].itertuples():
-            #     failure_metric += (row[0] + 1) / len(df)
-            # failure_metric /= len(df[(df['verdict'] > 0)])
-            # df.insert(len(df.columns), 'failure_metric', [failure_metric] * len(df),
-            #                   allow_duplicates=True)
-            # df.to_csv(conf.output_path + mode + "_" + algo + "_" + \
-            #             + str(episodes) + "_" + str(conf.win_size) + "_detail.csv",
-            #             header=True, mode='a', index=False)  ################
-        else:
-            apfd = 0
-            apfd_optimal = 0
-            apfd_random = 0
         
-        nrpa = test_ds[j].calc_NRPA_vector(test_case_vector)
-        nrpas.append(nrpa)
-        test_time = millis_interval(test_time_start,test_time_end)
-        training_time = millis_interval(training_start_time,training_end_time)
-        print("Testing agent  on cycle " + str(j) +
-              " resulted in APFD: " + str(apfd) +
-              " , NRPA: " + str(nrpa) +
-              " , optimal APFD: " + str(apfd_optimal) +
-              " , random APFD: " + str(apfd_random) +
-              " , # failed test cases: " + str(test_ds[j].get_failed_test_cases_count()) +
-              " , # test cases: " + str(test_ds[j].get_test_cases_count()), flush=True)
-        log_file.write(datetime.now().strftime("%d/%m/%Y %H:%M:%S") + "," + mode + "," + algo + ","
-                       + Path(model_save_path).stem + "," +
-                       str(episodes) + "," + str(steps) + "," + str(cycle_id_text) + "," + str(training_time) +
-                       "," + str(test_time) + "," + str(conf.win_size) + "," +
-                       str(test_ds[j].get_test_cases_count()) + "," +
-                       str(test_ds[j].get_failed_test_cases_count()) + "," + str(apfd) + "," +
-                       str(nrpa) + "," + str(apfd_random) + "," + str(apfd_optimal) + os.linesep)
-        
-        # log_file_test_cases.write(datetime.now().strftime("%d/%m/%Y %H:%M:%S") + "," + mode + "," + algo + ","
-        #                + Path(model_save_path).stem + "," +
-        #                str(episodes) + "," + str(steps) + "," + str(cycle_id_text) + "," + str(training_time) +
-        #                "," + str(test_time) + "," + str(conf.win_size) + "," +
-        #                           ('|'.join(test_case_id_vector)) + os.linesep)
-        
-        if (len(apfds)):
-            print(f"average apfd so far is {mean(apfds)}")
-        # print(f"average nrpas so far is {mean(nrpas)}")
-
-        log_file.flush()
-    log_file.close()
+        pd.DataFrame(results).to_csv(os.path.join(conf.output_path, "results.csv"))
+    
 
 def reportDatasetInfo(test_case_data:list):
     cycle_cnt = 0
