@@ -155,7 +155,7 @@ class TPAgentUtil:
         print("Evaluation of an agent from " + model_path)
         model = TPAgentUtil.load_model(path=model_path, algo=algo, env=env)
         if model:
-            if mode.upper() == "PAIRWISE" and algo.upper() != "DQN" :
+            if mode.upper() in ["PAIRWISE", "DIFF"] and algo.upper() != "DQN" :
                 env = model.get_env()
                 obs = env.reset()
                 done = False

@@ -64,6 +64,9 @@ class ExperimentsService:
         if args.policy == "LSTM":
             exp_name += f"-lstm"
 
+        if args.exp_name is not None:
+            exp_name = args.exp_name
+
         loader = TestCaseExecutionDataLoader(args.output_path)
         loader.load_data()
         loader.test_data = DataService.remove_outlier_tests(
@@ -84,7 +87,7 @@ class ExperimentsService:
         conf.log_file = str(conf.output_path + "\\log.txt")
         
         experiment(
-            mode="PAIRWISE", 
+            mode=args.rlenv, 
             algo=("ACER", {"replay_ratio": args.replay_ratio, "policy": args.policy}), 
             train_ds=ci_logs_train,
             test_ds=ci_logs_test, 
@@ -177,7 +180,7 @@ class ExperimentsService:
         if args.experiment == Experiment.FULL:
             exp_name = "full-outliers"
             if args.oversampling:
-                exp_name += "-os"
+                exp_name += "-os3"
             
             if args.features:
                 exp_name += f"-f{len(args.features)}"

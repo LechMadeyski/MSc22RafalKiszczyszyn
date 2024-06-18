@@ -113,6 +113,13 @@ def add_dataset_parser_arguments(parser):
 
 
 ARGS = None
+EXP_DATA = {
+  "oversampling": False,
+  "K": None,
+  "rlenv": "PAIRWISE",
+  "exp_name": None  
+}
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -309,10 +316,17 @@ def main():
 
     args = parser.parse_args(ARGS)
     
-    args.features = FEATURES[K]
-    args.oversampling = False
+    args.exp_name = EXP_DATA["exp_name"]
+    args.oversampling = EXP_DATA["oversampling"]
+    K = EXP_DATA["K"]
+    if args.oversampling:
+        args.features = FEATURES_OS[K] if K else None
+    else:
+        args.features = FEATURES[K] if K else None
+    
     args.replay_ratio = 0
     args.policy = "MLP"
+    args.rlenv = EXP_DATA["rlenv"]
 
     args.output_path.mkdir(parents=True, exist_ok=True)
     args.unique_separator = "\t"
@@ -331,6 +345,67 @@ def main():
 
 SELECTED = ['S2', 'S8', 'S9', 'S12', 'S13', 'S14', 'S16', 'S20', 'S21', 'S22', 'S23', 'S24', 'S25']
 
+
+def run(data, args: list):
+    global EXP_DATA
+    global ARGS
+    
+    db_path = "C:\\Users\\rafal\\MT\\repos\\MSc22RafalKiszczyszyn\\TCP-CI\\analysis\\datasets.csv"
+    workdir = "C:\\Users\\rafal\\MT\\repos\\MSc22RafalKiszczyszyn\\TCP-CI\\datasets\\"
+    db = pd.read_csv(db_path)
+    
+    for _, subject in db.iterrows():
+        sid = subject['SID']
+        if sid not in SELECTED:
+            continue
+
+        EXP_DATA = data[sid] 
+        subject_path = subject['Subject'].replace("/", "@")
+        args.extend(["-o", workdir + subject_path])
+        ARGS = args 
+        # ["learn", "-t", "50", "-r", "best", "-e", "FULL", "-o", workdir + subject_path]
+        # ARGS = ["rfe", "-t", "50", "-o", workdir + subject_path]
+        # ARGS = ["rl", "-t", "50", "-o", workdir + subject_path]
+        main()
+    pass
+
+
+def exp1():
+    data = {sid: {"oversampling": False, "K": None, "rlenv": "PAIRWISE", "exp_name": None} for sid in SELECTED}
+    run(data, ["learn", "-t", "50", "-r", "best", "-e", "FULL"])
+    run(data, ["rl", "-t", "50"])
+
+def exp2_1():
+    data = {sid: {"oversampling": False, "K": None, "rlenv": "PAIRWISE", "exp_name": None} for sid in SELECTED}
+    run(data, ["rfe", "-t", "50"])
+
+def exp2_2():
+    for k in [80, 50, 30, 15]:
+        data = {sid: {"oversampling": False, "K": k, "rlenv": "PAIRWISE", "exp_name": None} for sid in SELECTED}
+        run(data, ["learn", "-t", "50", "-r", "best", "-e", "FULL"])
+        run(data, ["rl", "-t", "50"])
+
+def exp3_1():
+    data = {sid: {"oversampling": True, "K": None, "rlenv": "PAIRWISE", "exp_name": None} for sid in SELECTED}
+    run(data, ["learn", "-t", "50", "-r", "best", "-e", "FULL"])
+    run(data, ["rl", "-t", "50"])
+
+def exp3_2():
+    data = {sid: {"oversampling": True, "K": None, "rlenv": "PAIRWISE", "exp_name": None} for sid in SELECTED}
+    run(data, ["rfe", "-t", "50"])
+
+def exp3_3():
+    for k in [30, 15]:
+        data = {sid: {"oversampling": True, "K": k, "rlenv": "PAIRWISE", "exp_name": None} for sid in SELECTED}
+        run(data, ["rl", "-t", "50"])
+
+def exp4():
+    # data = {sid: {"oversampling": False, "K": 15, "rlenv": "DIFF", "exp_name": "rl-diff-f15"} for sid in SELECTED}
+    # run(data, ["rl", "-t", "50"])
+    data = {sid: {"oversampling": True, "K": 15, "rlenv": "DIFF", "exp_name": f"rl-diff-os-f15"} for sid in ['S2', 'S8', 'S9']}
+    run(data, ["rl", "-t", "50"])
+    
+
 if __name__ == "__main__":
     import pandas as pd
     import random
@@ -339,20 +414,4 @@ if __name__ == "__main__":
     random.seed(44)
     np.random.seed(44)
 
-    db_path = "C:\\Users\\rafal\\MT\\repos\\MSc22RafalKiszczyszyn\\TCP-CI\\analysis\\datasets.csv"
-    db = pd.read_csv(db_path)
-    
-    workdir = "C:\\Users\\rafal\\MT\\repos\\MSc22RafalKiszczyszyn\\TCP-CI\\datasets\\"
-    
-    for k in [30, 50, 80]:
-        K = k
-        for _, subject in db.iterrows():
-            if subject['SID'] not in SELECTED:
-                continue
-            
-            subject_path = subject['Subject'].replace("/", "@")
-            ARGS = ["learn", "-t", "50", "-r", "best", "-e", "FULL", "-o", workdir + subject_path]
-            # ARGS = ["rfe", "-t", "50", "-o", workdir + subject_path]
-            # ARGS = ["rl", "-t", "50", "-o", workdir + subject_path]
-            main()
-        pass
+    exp4()

@@ -21,10 +21,12 @@ class TcpRandomOverSampler:
         self._sampler = RandomOverSampler(random_state=44, sampling_strategy=1.0)
     
     def resample(self, df: pd.DataFrame, y_column):
-        X = df.filter(regex='^f\d+$')
+        X = df.drop([Feature.VERDICT, Feature.DURATION, Feature.BUILD, Feature.TEST], axis=1)
+        # X = df.filter(regex='^f\d+$')
         y = df[y_column]
 
         self._sampler.fit_resample(X, y)
+        np.random.shuffle(self._sampler.sample_indices_)
         return df.iloc[self._sampler.sample_indices_]
 
 
@@ -107,7 +109,7 @@ class RankLibLearner:
 
         return normalized_dataset, feature_dataset, scaler
 
-    def convert_to_ranklib_dataset(self, dataset, scaler=None):
+    def convert_to_ranklib_dataset(self, dataset, scaler=None, oversampling=False):
         if dataset.empty:
             return None
         dataset = dataset.copy()
@@ -119,6 +121,10 @@ class RankLibLearner:
             build_ds = normalized_dataset[
                 normalized_dataset[Feature.BUILD] == build
             ].copy()
+
+            if oversampling:
+                build_ds = self._sampler.resample(build_ds, Feature.VERDICT)
+
             build_ds["B_Verdict"] = (build_ds[Feature.VERDICT] > 0).astype(int)
             build_ds.sort_values(
                 ["B_Verdict", Feature.DURATION],
@@ -166,7 +172,13 @@ class RankLibLearner:
             test_builds = [b for b in custom_test_builds if b in builds]
         
         logging.info("Creating training sets")
+
+        X = {b: None for b in builds}
         for i, build in tqdm(list(enumerate(builds)), desc="Creating training sets"):
+            if oversampling:
+                ds = ranklib_ds[ranklib_ds["i_build"] == build]
+                X[build] = self._sampler.resample(ds, 'i_verdict')
+
             if build not in test_builds:
                 continue
             
@@ -175,7 +187,10 @@ class RankLibLearner:
                 continue
 
             if oversampling:
-                train_ds = self._sampler.resample(train_ds, 'i_verdict')
+                # First Implementation: All training build oversampled at once
+                # train_ds = self._sampler.resample(train_ds, 'i_verdict')
+                sets = [X[b] for b in builds[:i]]
+                train_ds = pd.concat(sets, ignore_index=True)
 
             test_ds = ranklib_ds[ranklib_ds["i_build"] == build]
             build_out_path = output_path / str(build)
@@ -433,7 +448,7 @@ class RankLibLearner:
         if ranker == None:
             ranker = (self.config.best_ranker, self.config.best_ranker_params)
         logging.info("Converting data to RankLib format.")
-        ranklib_ds = self.convert_to_ranklib_dataset(dataset_df)
+        ranklib_ds = self.convert_to_ranklib_dataset(dataset_df, oversampling=False)
         logging.info("Finished converting data to RankLib format.")
         traning_sets_path = results_path / name
         self.create_ranklib_training_sets(ranklib_ds, traning_sets_path, oversampling=oversampling)

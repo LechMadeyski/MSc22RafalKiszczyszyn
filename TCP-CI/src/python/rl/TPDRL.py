@@ -9,6 +9,7 @@ from statistics import mean
 
 from .TPAgentUtil import TPAgentUtil
 from .PairWiseEnv import CIPairWiseEnv
+from .PairWiseEnvUsingDiff import CIPairWiseEnvUsingDiff
 from .TPPairWiseDQNAgent import TPPairWiseDQNAgent
 from .ci_cycle import CICycleLog
 from .Config import Config
@@ -33,7 +34,7 @@ def get_max_test_cases_count(cycle_logs:[]):
 
 def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, model_path, dataset_name, conf, verbos=False):
     algo, algo_params = algo
-    results = {"build": [], "time": []}
+    results = {"build": [], "training": [], "testing": []}
 
     log_dir = os.path.dirname(conf.log_file)
 #    -- fix end cycle issue
@@ -62,6 +63,10 @@ def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, 
             N = train_ds[i].get_test_cases_count()
             steps = int(episodes * (N * (math.log(N,2)+1)))
             env = CIPairWiseEnv(train_ds[i], conf)
+        if mode.upper() == 'DIFF':
+            N = train_ds[i].get_test_cases_count()
+            steps = int(episodes * (N * (math.log(N,2)+1)))
+            env = CIPairWiseEnvUsingDiff(train_ds[i], conf)
         elif mode.upper() == 'POINTWISE':
             N = train_ds[i].get_test_cases_count()
             steps = int(episodes * (N * (math.log(N,2)+1)))
@@ -77,7 +82,7 @@ def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, 
             steps = int(episodes * (N * (math.log(N,2)+1)))
             env = CIListWiseEnvMultiAction(train_ds[i], conf)
         
-        start = datetime.now()
+        training_start = datetime.now()
         print("Training agent with replaying of cycle " + str(i) + " with steps " + str(steps))
 
         if model_save_path:
@@ -97,6 +102,7 @@ def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, 
             tp_agent.learn(total_timesteps=steps, reset_num_timesteps=True, callback=callback_class)
             
         print("Training agent with replaying of cycle " + str(i) + " is finished")
+        training_stop = datetime.now()
 
         j = i+1   # test trained agent on next cycles
         while (((test_ds[j].get_test_cases_count() < 6)
@@ -111,6 +117,8 @@ def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, 
 
         if mode.upper() == 'PAIRWISE':
             env_test = CIPairWiseEnv(test_ds[j], conf)
+        if mode.upper() == 'DIFF':
+            env_test = CIPairWiseEnvUsingDiff(test_ds[j], conf)
         elif mode.upper() == 'POINTWISE':
             env_test = CIPointWiseEnv(test_ds[j], conf)
         elif mode.upper() == 'LISTWISE':
@@ -118,7 +126,9 @@ def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, 
         elif mode.upper() == 'LISTWISE2':
             env_test = CIListWiseEnvMultiAction(test_ds[j], conf)
 
+        testing_start = datetime.now()
         test_case_vector = TPAgentUtil.test_agent(env=env_test, algo=algo, model_path=model_save_path+".zip", mode=mode)
+        testing_stop = datetime.now()
         test_case_id_vector = []
 
 
@@ -126,9 +136,9 @@ def experiment(mode, algo, train_ds, test_ds, start_cycle, end_cycle, episodes, 
             test_case_id_vector.append(str(test_case['test_id']))
             cycle_id_text = test_case['cycle_id']
         
-        stop = datetime.now()
         results["build"].append(cycle_id_text)
-        results["time"].append(stop - start)
+        results["training"].append((training_stop - training_start).total_seconds())
+        results["testing"].append((testing_stop - testing_start).total_seconds())
         
         if test_ds[j].get_failed_test_cases_count() != 0:
             ranking = pd.DataFrame(test_case_vector)
